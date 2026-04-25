@@ -101,7 +101,14 @@ type TrackAudioRuntime = {
   playing: boolean;
 };
 
+type PlayerProgress = {
+  playerOneTime: number;
+  playerTwoTime: number;
+  duration: number;
+};
+
 const clampVolume = (value: number) => Math.min(1, Math.max(0, value));
+const clampTime = (value: number, max: number) => Math.min(Math.max(value, 0), max);
 
 const readAudioStateFromUrl = () => {
   const parsedVolumes: Record<string, number> = { ...INITIAL_VOLUMES };
@@ -174,6 +181,7 @@ const writeAudioStateToUrl = (
 export default function Home() {
   const audioRefs = useRef<Record<string, TrackAudioRuntime>>({});
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
+  const [isDebugMode, setIsDebugMode] = useState(false);
   const [selectedInUrl, setSelectedInUrl] = useState<Record<string, boolean>>(
     {},
   );
@@ -183,6 +191,14 @@ export default function Home() {
   );
   const [volumes, setVolumes] =
     useState<Record<string, number>>(INITIAL_VOLUMES);
+  const [playerProgress, setPlayerProgress] = useState<
+    Record<string, PlayerProgress>
+  >(
+    TRACKS.reduce<Record<string, PlayerProgress>>((acc, track) => {
+      acc[track.id] = { playerOneTime: 0, playerTwoTime: 0, duration: 1 };
+      return acc;
+    }, {}),
+  );
   const volumesRef = useRef<Record<string, number>>(INITIAL_VOLUMES);
 
   const applyVolumes = (trackId: string) => {
@@ -228,6 +244,29 @@ export default function Home() {
     runtime.crossfadeTo = null;
   };
 
+  const updateTrackProgress = (trackId: string) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime) return;
+
+    const [playerOne, playerTwo] = runtime.players;
+    const playerOneDuration = Number.isFinite(playerOne.duration) && playerOne.duration > 0
+      ? playerOne.duration
+      : 0;
+    const playerTwoDuration = Number.isFinite(playerTwo.duration) && playerTwo.duration > 0
+      ? playerTwo.duration
+      : 0;
+    const duration = Math.max(playerOneDuration, playerTwoDuration, 1);
+
+    setPlayerProgress((prev) => ({
+      ...prev,
+      [trackId]: {
+        playerOneTime: clampTime(playerOne.currentTime, duration),
+        playerTwoTime: clampTime(playerTwo.currentTime, duration),
+        duration,
+      },
+    }));
+  };
+
   const stopTrack = (trackId: string) => {
     const runtime = audioRefs.current[trackId];
     if (!runtime) return;
@@ -248,6 +287,7 @@ export default function Home() {
 
     runtime.activeIndex = 0;
     runtime.playing = false;
+    updateTrackProgress(trackId);
     setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
   };
 
@@ -276,6 +316,7 @@ export default function Home() {
       }
 
       applyVolumes(trackId);
+      updateTrackProgress(trackId);
       const elapsedSeconds =
         runtime.players[fromIndex].currentTime - runtime.crossfadeStartTime;
       if (elapsedSeconds < runtime.crossfadeDurationSeconds) return;
@@ -286,6 +327,7 @@ export default function Home() {
       runtime.activeIndex = toIndex;
       stopCrossfade(runtime);
       applyVolumes(trackId);
+      updateTrackProgress(trackId);
     }, CROSSFADE_STEP_MS);
   };
 
@@ -325,6 +367,7 @@ export default function Home() {
 
     runtime.monitorId = window.setInterval(() => {
       if (!runtime.playing || runtime.crossfadeId !== null) return;
+      updateTrackProgress(trackId);
 
       const active = runtime.players[runtime.activeIndex];
       // Some MP3s intermittently report non-finite duration, so keep looping by
@@ -359,14 +402,18 @@ export default function Home() {
       await active.play();
       runtime.playing = true;
       startMonitor(trackId);
+      updateTrackProgress(trackId);
       setIsPlaying((prev) => ({ ...prev, [trackId]: true }));
     } catch {
       runtime.playing = false;
+      updateTrackProgress(trackId);
       setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
     }
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setIsDebugMode(params.get("debug") === "true");
     const { volumes: urlVolumes, playingIds } = readAudioStateFromUrl();
     const initialFilteredTracks =
       playingIds.size > 0 ? new Set(playingIds) : null;
@@ -407,6 +454,9 @@ export default function Home() {
     }
 
     audioRefs.current = state;
+    for (const track of TRACKS) {
+      updateTrackProgress(track.id);
+    }
 
     void (async () => {
       for (const trackId of playingIds) {
@@ -453,6 +503,59 @@ export default function Home() {
     setVolumes((prev) => ({ ...prev, [trackId]: value }));
   };
 
+  const seekTrack = async (
+    trackId: string,
+    nextTime: number,
+    preferredActiveIndex: 0 | 1,
+  ) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime) return;
+
+    const [first, second] = runtime.players;
+    const firstDuration =
+      Number.isFinite(first.duration) && first.duration > 0 ? first.duration : 0;
+    const secondDuration =
+      Number.isFinite(second.duration) && second.duration > 0 ? second.duration : 0;
+    const duration = Math.max(firstDuration, secondDuration, 1);
+    const seekTime = clampTime(nextTime, duration);
+    const targetVolume = volumesRef.current[trackId] ?? 0.65;
+    const wasPlaying = runtime.playing;
+
+    stopCrossfade(runtime);
+
+    if (runtime.monitorId !== null) {
+      window.clearInterval(runtime.monitorId);
+      runtime.monitorId = null;
+    }
+
+    first.pause();
+    second.pause();
+
+    runtime.players[preferredActiveIndex].currentTime = seekTime;
+
+    runtime.activeIndex = preferredActiveIndex;
+    runtime.players[runtime.activeIndex].volume = targetVolume;
+    runtime.players[runtime.activeIndex === 0 ? 1 : 0].volume = 0;
+
+    if (!wasPlaying) {
+      runtime.playing = false;
+      updateTrackProgress(trackId);
+      return;
+    }
+
+    try {
+      await runtime.players[runtime.activeIndex].play();
+      runtime.playing = true;
+      startMonitor(trackId);
+      updateTrackProgress(trackId);
+      setIsPlaying((prev) => ({ ...prev, [trackId]: true }));
+    } catch {
+      runtime.playing = false;
+      updateTrackProgress(trackId);
+      setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
+    }
+  };
+
   const playVisibleTracks = async () => {
     const visibleIds = visibleTracks.map((track) => track.id);
     if (visibleIds.length === 0) return;
@@ -486,11 +589,6 @@ export default function Home() {
         return acc;
       }, {}),
     );
-
-    if (typeof window !== "undefined") {
-      const { pathname, hash } = window.location;
-      window.history.replaceState(null, "", `${pathname}${hash}`);
-    }
   };
 
   const visibleTracks =
@@ -513,7 +611,7 @@ export default function Home() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080810] text-[#ddddf0]">
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[length:34px_34px]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-size-[34px_34px]" />
       <div className="pointer-events-none absolute -left-28 top-[-160px] h-[520px] w-[520px] rounded-full bg-[#c8f55a]/10 blur-[110px]" />
       <div className="pointer-events-none absolute -right-28 bottom-[-160px] h-[520px] w-[520px] rounded-full bg-[#5af5c8]/10 blur-[110px]" />
 
@@ -531,6 +629,11 @@ export default function Home() {
           <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em] text-[#55556a]">
             Calm sound layers
           </p>
+          {isDebugMode && (
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#7d7d94]">
+              Debug timeline controls enabled
+            </p>
+          )}
 
           {showPlayAllButton && (
             <div className="mt-6 flex justify-center">
@@ -549,6 +652,11 @@ export default function Home() {
           {visibleTracks.map((track) => {
             const playing = !!isPlaying[track.id];
             const volume = volumes[track.id] ?? 0.65;
+            const progress = playerProgress[track.id] ?? {
+              playerOneTime: 0,
+              playerTwoTime: 0,
+              duration: 1,
+            };
 
             return (
               <article
@@ -597,6 +705,45 @@ export default function Home() {
                       aria-label={`Volume for ${track.label}`}
                     />
                   </div>
+
+                  {isDebugMode && (
+                    <div className="flex w-full flex-col gap-2 pt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
+                          Player 1
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={progress.duration}
+                          step={0.01}
+                          value={progress.playerOneTime}
+                          onChange={(event) =>
+                            void seekTrack(track.id, Number(event.target.value), 0)
+                          }
+                          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#7db6ff]"
+                          aria-label={`Player 1 position for ${track.label}`}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
+                          Player 2
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={progress.duration}
+                          step={0.01}
+                          value={progress.playerTwoTime}
+                          onChange={(event) =>
+                            void seekTrack(track.id, Number(event.target.value), 1)
+                          }
+                          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#f5db5a]"
+                          aria-label={`Player 2 position for ${track.label}`}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </article>
             );
