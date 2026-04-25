@@ -54,7 +54,7 @@ export default function AboutPage() {
         <header className="relative text-center">
           <Link
             href="/"
-            className="absolute left-0 top-0 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
+            className="fixed left-[10px] top-[8px] z-20 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] transition hover:text-[#a9ceff]"
           >
             Home
           </Link>

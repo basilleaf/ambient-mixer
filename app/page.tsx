@@ -24,6 +24,24 @@ const TRACKS: Track[] = [
     color: "#5af5c8",
   },
   {
+    id: "rain",
+    label: "Rain",
+    file: "liecio-calming-rain-257596.mp3",
+    color: "#5a9bf5",
+  },
+  {
+    id: "rainy-town",
+    label: "Rainy Town",
+    file: "whitenoisesleepers-rainy-day-in-town-with-birds-singing-194011.mp3",
+    color: "#f5db5a",
+  },
+  {
+    id: "ocean",
+    label: "Ocean",
+    file: "marcinflorida-calm-ocean-waves-early-in-the-morning-140020.mp3",
+    color: "#c85af5",
+  },
+  {
     id: "cricket-soft",
     label: "Cricket Soft",
     file: "felix_quinol-cricket-sound-113945.mp3",
@@ -34,24 +52,6 @@ const TRACKS: Track[] = [
     label: "Cricket Loop",
     file: "freesound_community-cricket-single-pretty-clean-internal-loop-badlands-ab-190818-26034.mp3",
     color: "#f5c85a",
-  },
-  {
-    id: "rain",
-    label: "Rain",
-    file: "liecio-calming-rain-257596.mp3",
-    color: "#5a9bf5",
-  },
-  {
-    id: "ocean",
-    label: "Ocean",
-    file: "marcinflorida-calm-ocean-waves-early-in-the-morning-140020.mp3",
-    color: "#c85af5",
-  },
-  {
-    id: "pad",
-    label: "Ambient Pad",
-    file: "samuelfjohanns-uplifting-pad-texture-113842.mp3",
-    color: "#8ef55a",
   },
   {
     id: "crickets-night",
@@ -66,10 +66,10 @@ const TRACKS: Track[] = [
     color: "#f57bc0",
   },
   {
-    id: "rainy-town",
-    label: "Rainy Town",
-    file: "whitenoisesleepers-rainy-day-in-town-with-birds-singing-194011.mp3",
-    color: "#f5db5a",
+    id: "pad",
+    label: "Ambient Pad",
+    file: "samuelfjohanns-uplifting-pad-texture-113842.mp3",
+    color: "#8ef55a",
   },
   {
     id: "birds",
@@ -144,9 +144,9 @@ const writeAudioStateToUrl = (
   const url = new URL(window.location.href);
   const params = url.searchParams;
 
-  const playingTrackIds = TRACKS.filter((track) => !!selectedInUrl[track.id]).map(
-    (track) => track.id,
-  );
+  const playingTrackIds = TRACKS.filter(
+    (track) => !!selectedInUrl[track.id],
+  ).map((track) => track.id);
 
   // Always clear our own params first to avoid stale audio state in the URL.
   params.delete(URL_PLAYING_KEY);
@@ -157,7 +157,9 @@ const writeAudioStateToUrl = (
   if (playingTrackIds.length > 0) {
     params.set(URL_PLAYING_KEY, playingTrackIds.join(","));
     for (const trackId of playingTrackIds) {
-      const volume = clampVolume(volumes[trackId] ?? INITIAL_VOLUMES[trackId] ?? 0.65);
+      const volume = clampVolume(
+        volumes[trackId] ?? INITIAL_VOLUMES[trackId] ?? 0.65,
+      );
       params.set(`${URL_VOLUME_PREFIX}${trackId}`, volume.toFixed(2));
     }
   } else {
@@ -172,8 +174,12 @@ const writeAudioStateToUrl = (
 export default function Home() {
   const audioRefs = useRef<Record<string, TrackAudioRuntime>>({});
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
-  const [selectedInUrl, setSelectedInUrl] = useState<Record<string, boolean>>({});
-  const [visibleTrackIds, setVisibleTrackIds] = useState<Set<string> | null>(null);
+  const [selectedInUrl, setSelectedInUrl] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [visibleTrackIds, setVisibleTrackIds] = useState<Set<string> | null>(
+    null,
+  );
   const [volumes, setVolumes] =
     useState<Record<string, number>>(INITIAL_VOLUMES);
   const volumesRef = useRef<Record<string, number>>(INITIAL_VOLUMES);
@@ -328,7 +334,8 @@ export default function Home() {
 
   useEffect(() => {
     const { volumes: urlVolumes, playingIds } = readAudioStateFromUrl();
-    const initialFilteredTracks = playingIds.size > 0 ? new Set(playingIds) : null;
+    const initialFilteredTracks =
+      playingIds.size > 0 ? new Set(playingIds) : null;
     volumesRef.current = urlVolumes;
     setVolumes(urlVolumes);
     setVisibleTrackIds(initialFilteredTracks);
@@ -430,7 +437,7 @@ export default function Home() {
         <header className="relative text-center">
           <Link
             href="/about"
-            className="absolute right-0 top-0 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
+            className="fixed right-[10px] top-[8px] z-20 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] transition hover:text-[#a9ceff]"
           >
             About
           </Link>
@@ -457,11 +464,11 @@ export default function Home() {
                     : "#1e1e30",
                 }}
               >
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap sm:gap-4">
                   <button
                     type="button"
                     onClick={() => void togglePlay(track.id)}
-                    className="min-w-[88px] rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-w-[88px] shrink-0 rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-50"
                     style={{
                       borderColor: track.color,
                       color: playing ? "#080810" : track.color,
@@ -471,16 +478,13 @@ export default function Home() {
                     {playing ? "Stop" : "Play"}
                   </button>
 
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex flex-1 items-center">
                     <p className="truncate font-mono text-sm text-[#ddddf0]">
                       {track.label}
                     </p>
-                    <p className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[#55556a]">
-                      {track.file}
-                    </p>
                   </div>
 
-                  <div className="flex w-[170px] items-center gap-2">
+                  <div className="flex w-full basis-full items-center gap-2 sm:w-[170px] sm:basis-auto">
                     <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
                       Vol
                     </span>
