@@ -177,6 +177,7 @@ export default function Home() {
   const [selectedInUrl, setSelectedInUrl] = useState<Record<string, boolean>>(
     {},
   );
+  const [isHydratedFromUrl, setIsHydratedFromUrl] = useState(false);
   const [visibleTrackIds, setVisibleTrackIds] = useState<Set<string> | null>(
     null,
   );
@@ -345,6 +346,7 @@ export default function Home() {
         return acc;
       }, {}),
     );
+    setIsHydratedFromUrl(true);
 
     const state: Record<string, TrackAudioRuntime> = {};
 
@@ -394,8 +396,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!isHydratedFromUrl) return;
     writeAudioStateToUrl(volumes, selectedInUrl);
-  }, [volumes, selectedInUrl]);
+  }, [isHydratedFromUrl, volumes, selectedInUrl]);
 
   const togglePlay = async (trackId: string) => {
     const runtime = audioRefs.current[trackId];
