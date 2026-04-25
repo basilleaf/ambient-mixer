@@ -420,6 +420,46 @@ export default function Home() {
     setVolumes((prev) => ({ ...prev, [trackId]: value }));
   };
 
+  const playVisibleTracks = async () => {
+    const visibleIds = visibleTracks.map((track) => track.id);
+    if (visibleIds.length === 0) return;
+
+    setSelectedInUrl((prev) => {
+      const next = { ...prev };
+      for (const trackId of visibleIds) {
+        next[trackId] = true;
+      }
+      return next;
+    });
+
+    for (const trackId of visibleIds) {
+      if (audioRefs.current[trackId]?.playing) continue;
+      await playTrack(trackId);
+    }
+  };
+
+  const clearAll = () => {
+    for (const track of TRACKS) {
+      stopTrack(track.id);
+    }
+
+    const resetVolumes = { ...INITIAL_VOLUMES };
+    volumesRef.current = resetVolumes;
+    setVolumes(resetVolumes);
+    setVisibleTrackIds(null);
+    setSelectedInUrl(
+      TRACKS.reduce<Record<string, boolean>>((acc, track) => {
+        acc[track.id] = false;
+        return acc;
+      }, {}),
+    );
+
+    if (typeof window !== "undefined") {
+      const { pathname, hash } = window.location;
+      window.history.replaceState(null, "", `${pathname}${hash}`);
+    }
+  };
+
   const visibleTracks =
     visibleTrackIds === null
       ? TRACKS
@@ -429,6 +469,14 @@ export default function Home() {
   );
   const hasUsedTracks = usedTrackIds.length > 0;
   const isShowingAllPlayers = visibleTrackIds === null;
+  const allVisibleTracksArePlaying =
+    visibleTracks.length > 0 &&
+    visibleTracks.every((track) => !!isPlaying[track.id]);
+  const showPlayAllButton = !isShowingAllPlayers && !allVisibleTracksArePlaying;
+  const isDefaultVolumeState = TRACKS.every(
+    (track) => (volumes[track.id] ?? 0.65) === INITIAL_VOLUMES[track.id],
+  );
+  const showClearAllButton = hasUsedTracks || !isDefaultVolumeState;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080810] text-[#ddddf0]">
@@ -450,6 +498,18 @@ export default function Home() {
           <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em] text-[#55556a]">
             Calm sound layers
           </p>
+
+          {showPlayAllButton && (
+            <div className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => void playVisibleTracks()}
+                className="rounded-md border border-[#c8f55a] bg-transparent px-5 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[#c8f55a] shadow-[0_0_0_1px_rgba(200,245,90,0.15)] transition hover:bg-[#c8f55a]/12 hover:text-[#efffb4]"
+              >
+                Play all
+              </button>
+            </div>
+          )}
         </header>
 
         <div className="flex flex-col gap-3">
@@ -512,19 +572,31 @@ export default function Home() {
 
         {(hasUsedTracks || !isShowingAllPlayers) && (
           <div className="pt-1 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                if (isShowingAllPlayers) {
-                  setVisibleTrackIds(new Set(usedTrackIds));
-                  return;
-                }
-                setVisibleTrackIds(null);
-              }}
-              className="font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
-            >
-              {isShowingAllPlayers ? "Hide unused players" : "Show all players"}
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isShowingAllPlayers) {
+                    setVisibleTrackIds(new Set(usedTrackIds));
+                    return;
+                  }
+                  setVisibleTrackIds(null);
+                }}
+                className="font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
+              >
+                {isShowingAllPlayers ? "Hide unused players" : "Show all players"}
+              </button>
+
+              {showClearAllButton && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="font-mono text-xs uppercase tracking-[0.14em] text-[#f5db5a] underline decoration-[#f5db5a]/60 underline-offset-4 transition hover:text-[#ffe992]"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
           </div>
         )}
       </section>
