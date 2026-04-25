@@ -492,8 +492,8 @@ export default function Home() {
           >
             About
           </Link>
-          <h1 className="bg-gradient-to-r from-[#c8f55a] via-[#5af5c8] to-[#5a9bf5] bg-clip-text font-mono text-5xl font-bold tracking-tight text-transparent">
-            AMBIENT MIXER
+          <h1 className="ambient-title-home font-mono text-5xl font-bold tracking-tight">
+            <span className="ambient-title-home__text">AMBIENT MIXER</span>
           </h1>
           <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em] text-[#55556a]">
             Calm sound layers

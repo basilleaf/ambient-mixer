@@ -24,3 +24,71 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Home: site title load — explicit start state + reveal (no blur: main uses overflow-hidden) */
+@keyframes ambient-title-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Wide gradient + sliding position = reliable “shine” without mix-blend-mode.
+   Two passes: fast then slow, with a near-instant reset (tight % + linear) to avoid visible backward smear. */
+@keyframes ambient-title-shimmer-bg {
+  0% {
+    background-position: 100% 50%;
+    animation-timing-function: cubic-bezier(0.55, 0.05, 0.7, 0.35);
+  }
+  24% {
+    background-position: 0% 50%;
+    animation-timing-function: linear;
+  }
+  24.03% {
+    background-position: 100% 50%;
+    animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.ambient-title-home {
+  opacity: 0;
+  transform: translateY(16px);
+  animation: ambient-title-in 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.ambient-title-home__text {
+  display: inline-block;
+  background-image: linear-gradient(
+    90deg,
+    #c8f55a 0%,
+    #5af5c8 22%,
+    #e8fff2 42%,
+    #5af5c8 50%,
+    #5a9bf5 72%,
+    #c8f55a 100%
+  );
+  background-size: 220% 100%;
+  background-position: 100% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ambient-title-shimmer-bg 2.5s linear 0.08s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-title-home {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+
+  .ambient-title-home__text {
+    animation: none;
+    background-image: linear-gradient(90deg, #c8f55a, #5af5c8, #5a9bf5);
+    background-size: 100% 100%;
+    background-position: 0% 50%;
+  }
+}
