@@ -85,12 +85,14 @@ const INITIAL_VOLUMES: Record<string, number> = Object.fromEntries(
 const LOOP_CROSSFADE_SECONDS = 2.2;
 const MONITOR_INTERVAL_MS = 120;
 const CROSSFADE_STEP_MS = 40;
+const URL_VOLUME_PREFIX = "vol_";
+const URL_PLAYING_KEY = "playing";
 
 type TrackAudioRuntime = {
   players: [HTMLAudioElement, HTMLAudioElement];
   activeIndex: 0 | 1;
-  monitorId: ReturnType<typeof window.setInterval> | null;
-  crossfadeId: ReturnType<typeof window.setInterval> | null;
+  monitorId: number | null;
+  crossfadeId: number | null;
   crossfadeStartTime: number | null;
   crossfadeDurationSeconds: number;
   crossfadeFrom: 0 | 1 | null;
@@ -98,9 +100,78 @@ type TrackAudioRuntime = {
   playing: boolean;
 };
 
+const clampVolume = (value: number) => Math.min(1, Math.max(0, value));
+
+const readAudioStateFromUrl = () => {
+  const parsedVolumes: Record<string, number> = { ...INITIAL_VOLUMES };
+  const playingIds = new Set<string>();
+
+  if (typeof window === "undefined") {
+    return { volumes: parsedVolumes, playingIds };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+
+  const rawPlaying = params.get(URL_PLAYING_KEY);
+  if (rawPlaying) {
+    for (const id of rawPlaying.split(",")) {
+      const normalized = id.trim();
+      if (TRACKS.some((track) => track.id === normalized)) {
+        playingIds.add(normalized);
+      }
+    }
+  }
+
+  for (const trackId of playingIds) {
+    const rawVolume = params.get(`${URL_VOLUME_PREFIX}${trackId}`);
+    if (rawVolume === null) continue;
+    const parsed = Number(rawVolume);
+    if (Number.isFinite(parsed)) {
+      parsedVolumes[trackId] = clampVolume(parsed);
+    }
+  }
+
+  return { volumes: parsedVolumes, playingIds };
+};
+
+const writeAudioStateToUrl = (
+  volumes: Record<string, number>,
+  selectedInUrl: Record<string, boolean>,
+) => {
+  if (typeof window === "undefined") return;
+
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+
+  const playingTrackIds = TRACKS.filter((track) => !!selectedInUrl[track.id]).map(
+    (track) => track.id,
+  );
+
+  // Always clear our own params first to avoid stale audio state in the URL.
+  params.delete(URL_PLAYING_KEY);
+  for (const track of TRACKS) {
+    params.delete(`${URL_VOLUME_PREFIX}${track.id}`);
+  }
+
+  if (playingTrackIds.length > 0) {
+    params.set(URL_PLAYING_KEY, playingTrackIds.join(","));
+    for (const trackId of playingTrackIds) {
+      const volume = clampVolume(volumes[trackId] ?? INITIAL_VOLUMES[trackId] ?? 0.65);
+      params.set(`${URL_VOLUME_PREFIX}${trackId}`, volume.toFixed(2));
+    }
+  } else {
+    // Keep homepage URL clean when no tracks are active.
+  }
+
+  const nextSearch = params.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ""}${url.hash}`;
+  window.history.replaceState(null, "", nextUrl);
+};
+
 export default function Home() {
   const audioRefs = useRef<Record<string, TrackAudioRuntime>>({});
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
+  const [selectedInUrl, setSelectedInUrl] = useState<Record<string, boolean>>({});
   const [volumes, setVolumes] =
     useState<Record<string, number>>(INITIAL_VOLUMES);
   const volumesRef = useRef<Record<string, number>>(INITIAL_VOLUMES);
@@ -229,56 +300,9 @@ export default function Home() {
     }, MONITOR_INTERVAL_MS);
   };
 
-  useEffect(() => {
-    const state: Record<string, TrackAudioRuntime> = {};
-
-    for (const track of TRACKS) {
-      const first = new Audio(`/${track.file}`);
-      const second = new Audio(`/${track.file}`);
-      for (const player of [first, second]) {
-        player.loop = false;
-        player.preload = "auto";
-      }
-      first.volume = INITIAL_VOLUMES[track.id];
-      second.volume = 0;
-
-      state[track.id] = {
-        players: [first, second],
-        activeIndex: 0,
-        monitorId: null,
-        crossfadeId: null,
-        crossfadeStartTime: null,
-        crossfadeDurationSeconds: LOOP_CROSSFADE_SECONDS,
-        crossfadeFrom: null,
-        crossfadeTo: null,
-        playing: false,
-      };
-    }
-
-    audioRefs.current = state;
-
-    return () => {
-      for (const runtime of Object.values(state)) {
-        if (runtime.monitorId !== null) {
-          window.clearInterval(runtime.monitorId);
-        }
-        stopCrossfade(runtime);
-        for (const player of runtime.players) {
-          player.pause();
-          player.currentTime = 0;
-        }
-      }
-    };
-  }, []);
-
-  const togglePlay = async (trackId: string) => {
+  const playTrack = async (trackId: string) => {
     const runtime = audioRefs.current[trackId];
-    if (!runtime) return;
-
-    if (runtime.playing) {
-      stopTrack(trackId);
-      return;
-    }
+    if (!runtime || runtime.playing) return;
 
     const targetVolume = volumesRef.current[trackId] ?? 0.65;
     const active = runtime.players[runtime.activeIndex];
@@ -298,6 +322,82 @@ export default function Home() {
       runtime.playing = false;
       setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
     }
+  };
+
+  useEffect(() => {
+    const { volumes: urlVolumes, playingIds } = readAudioStateFromUrl();
+    volumesRef.current = urlVolumes;
+    setVolumes(urlVolumes);
+    setSelectedInUrl(
+      TRACKS.reduce<Record<string, boolean>>((acc, track) => {
+        acc[track.id] = playingIds.has(track.id);
+        return acc;
+      }, {}),
+    );
+
+    const state: Record<string, TrackAudioRuntime> = {};
+
+    for (const track of TRACKS) {
+      const first = new Audio(`/${track.file}`);
+      const second = new Audio(`/${track.file}`);
+      for (const player of [first, second]) {
+        player.loop = false;
+        player.preload = "auto";
+      }
+      first.volume = urlVolumes[track.id];
+      second.volume = 0;
+
+      state[track.id] = {
+        players: [first, second],
+        activeIndex: 0,
+        monitorId: null,
+        crossfadeId: null,
+        crossfadeStartTime: null,
+        crossfadeDurationSeconds: LOOP_CROSSFADE_SECONDS,
+        crossfadeFrom: null,
+        crossfadeTo: null,
+        playing: false,
+      };
+    }
+
+    audioRefs.current = state;
+
+    void (async () => {
+      for (const trackId of playingIds) {
+        await playTrack(trackId);
+      }
+    })();
+
+    return () => {
+      for (const runtime of Object.values(state)) {
+        if (runtime.monitorId !== null) {
+          window.clearInterval(runtime.monitorId);
+        }
+        stopCrossfade(runtime);
+        for (const player of runtime.players) {
+          player.pause();
+          player.currentTime = 0;
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    writeAudioStateToUrl(volumes, selectedInUrl);
+  }, [volumes, selectedInUrl]);
+
+  const togglePlay = async (trackId: string) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime) return;
+
+    if (runtime.playing) {
+      stopTrack(trackId);
+      setSelectedInUrl((prev) => ({ ...prev, [trackId]: false }));
+      return;
+    }
+
+    setSelectedInUrl((prev) => ({ ...prev, [trackId]: true }));
+    await playTrack(trackId);
   };
 
   const changeVolume = (trackId: string, value: number) => {
