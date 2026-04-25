@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import Home from "./page";
@@ -21,15 +21,19 @@ jest.mock("next/link", () => {
 });
 
 class MockAudio {
+  static instances: MockAudio[] = [];
+
   currentTime = 0;
   volume = 1;
   loop = false;
   preload = "";
   duration = 100;
+  ended = false;
   src = "";
 
   constructor(src: string) {
     this.src = src;
+    MockAudio.instances.push(this);
   }
 
   play = jest.fn(async () => undefined);
@@ -46,11 +50,16 @@ const setSearch = (search: string) => {
 
 describe("Home page audio state logic", () => {
   beforeEach(() => {
+    MockAudio.instances = [];
     Object.defineProperty(window, "Audio", {
       writable: true,
       value: MockAudio,
     });
     setSearch("");
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it("hydrates used tracks and volumes from URL and normalizes URL params", async () => {
@@ -125,5 +134,43 @@ describe("Home page audio state logic", () => {
     await user.click(stopButtons[0]);
 
     expect(screen.getByRole("button", { name: "Play all" })).toBeInTheDocument();
+  });
+
+  it("keeps looping even when duration is unavailable", async () => {
+    jest.useFakeTimers();
+    setSearch("playing=rain");
+
+    render(<Home />);
+
+    const rainPlayers = MockAudio.instances.filter((instance) =>
+      instance.src.includes("liecio-calming-rain-257596.mp3"),
+    );
+    expect(rainPlayers).toHaveLength(2);
+
+    const [first, second] = rainPlayers;
+    first.duration = Number.NaN;
+    second.duration = Number.NaN;
+
+    await waitFor(() => {
+      expect(first.play).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      first.ended = true;
+      jest.advanceTimersByTime(150);
+    });
+
+    await waitFor(() => {
+      expect(second.play).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      second.ended = true;
+      jest.advanceTimersByTime(150);
+    });
+
+    await waitFor(() => {
+      expect(first.play).toHaveBeenCalledTimes(2);
+    });
   });
 });

@@ -289,6 +289,32 @@ export default function Home() {
     }, CROSSFADE_STEP_MS);
   };
 
+  const switchToNextWithoutCrossfade = (trackId: string) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime || !runtime.playing || runtime.crossfadeId !== null) return;
+
+    const fromIndex = runtime.activeIndex;
+    const toIndex = fromIndex === 0 ? 1 : 0;
+    const outgoing = runtime.players[fromIndex];
+    const incoming = runtime.players[toIndex];
+    const targetVolume = volumesRef.current[trackId] ?? 0.65;
+
+    incoming.currentTime = 0;
+    incoming.volume = targetVolume;
+    void incoming.play().then(
+      () => {
+        outgoing.pause();
+        outgoing.currentTime = 0;
+        outgoing.volume = 0;
+        runtime.activeIndex = toIndex;
+      },
+      () => {
+        runtime.playing = false;
+        setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
+      },
+    );
+  };
+
   const startMonitor = (trackId: string) => {
     const runtime = audioRefs.current[trackId];
     if (!runtime) return;
@@ -301,6 +327,13 @@ export default function Home() {
       if (!runtime.playing || runtime.crossfadeId !== null) return;
 
       const active = runtime.players[runtime.activeIndex];
+      // Some MP3s intermittently report non-finite duration, so keep looping by
+      // handing off to the twin player if the active element reaches "ended".
+      if (active.ended) {
+        switchToNextWithoutCrossfade(trackId);
+        return;
+      }
+
       if (!Number.isFinite(active.duration) || active.duration <= 0) return;
       const remaining = active.duration - active.currentTime;
       if (remaining <= LOOP_CROSSFADE_SECONDS) {
