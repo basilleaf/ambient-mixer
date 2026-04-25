@@ -488,7 +488,7 @@ export default function Home() {
         <header className="relative text-center">
           <Link
             href="/about"
-            className="fixed right-[10px] top-[8px] z-20 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] transition hover:text-[#a9ceff]"
+            className="fixed right-[25px] top-[15px] z-20 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] transition hover:text-[#a9ceff]"
           >
             About
           </Link>
@@ -584,7 +584,9 @@ export default function Home() {
                 }}
                 className="font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
               >
-                {isShowingAllPlayers ? "Hide unused players" : "Show all players"}
+                {isShowingAllPlayers
+                  ? "Hide unused players"
+                  : "Show all players"}
               </button>
 
               {showClearAllButton && (

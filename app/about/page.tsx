@@ -54,7 +54,7 @@ export default function AboutPage() {
         <header className="relative text-center">
           <Link
             href="/"
-            className="fixed left-[10px] top-[8px] z-20 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] transition hover:text-[#a9ceff]"
+            className="fixed left-[25px] top-[15px] z-20 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] transition hover:text-[#a9ceff]"
           >
             Home
           </Link>
@@ -77,7 +77,7 @@ export default function AboutPage() {
             >
               Pixabay
             </a>
-            . Huge thanks to these artists:
+            . Huge thanks to these creators:
           </p>
 
           <ul className="mt-5 flex flex-col gap-3">
