@@ -38,6 +38,7 @@ class MockAudio {
 
   play = jest.fn(async () => undefined);
   pause = jest.fn(() => undefined);
+  load = jest.fn(() => undefined);
 }
 
 const setSearch = (search: string) => {
@@ -172,5 +173,127 @@ describe("Home page audio state logic", () => {
     await waitFor(() => {
       expect(first.play).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("reloads and retries if replay fails after ending", async () => {
+    jest.useFakeTimers();
+    setSearch("playing=cricket-soft");
+
+    render(<Home />);
+
+    const cricketPlayers = MockAudio.instances.filter((instance) =>
+      instance.src.includes("felix_quinol-cricket-sound-113945.mp3"),
+    );
+    expect(cricketPlayers).toHaveLength(2);
+
+    const [first, second] = cricketPlayers;
+    let firstPlayCalls = 0;
+    first.play.mockImplementation(async () => {
+      firstPlayCalls += 1;
+      if (firstPlayCalls === 2 && first.load.mock.calls.length === 0) {
+        throw new Error("Replay needs reload");
+      }
+      return undefined;
+    });
+
+    await waitFor(() => {
+      expect(first.play).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      first.ended = true;
+      jest.advanceTimersByTime(150);
+    });
+
+    await waitFor(() => {
+      expect(second.play).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      second.ended = true;
+      jest.advanceTimersByTime(150);
+    });
+
+    await waitFor(() => {
+      expect(first.load).toHaveBeenCalledTimes(1);
+      expect(first.play.mock.calls.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  it("completes crossfade when outgoing player ends early", async () => {
+    jest.useFakeTimers();
+    setSearch("playing=cricket-soft");
+
+    render(<Home />);
+
+    const cricketPlayers = MockAudio.instances.filter((instance) =>
+      instance.src.includes("felix_quinol-cricket-sound-113945.mp3"),
+    );
+    expect(cricketPlayers).toHaveLength(2);
+
+    const [first, second] = cricketPlayers;
+    first.duration = 9;
+    second.duration = 9;
+
+    await waitFor(() => {
+      expect(first.play).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      first.currentTime = 6.9;
+      jest.advanceTimersByTime(150);
+    });
+
+    await waitFor(() => {
+      expect(second.play).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      first.ended = true;
+      first.currentTime = 9;
+      jest.advanceTimersByTime(150);
+    });
+
+    act(() => {
+      second.ended = true;
+      jest.advanceTimersByTime(150);
+    });
+
+    await waitFor(() => {
+      expect(first.play.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it("shows a countdown for each timeline slider in debug mode", async () => {
+    setSearch("debug=true&playing=rain");
+
+    render(<Home />);
+
+    await screen.findByText("Debug timeline controls enabled");
+    expect(
+      screen.getByLabelText("Player 1 countdown for Rain"),
+    ).toHaveTextContent("01:40.0");
+    expect(
+      screen.getByLabelText("Player 2 countdown for Rain"),
+    ).toHaveTextContent("01:40.0");
+  });
+
+  it("exits debug mode by removing only the debug URL param", async () => {
+    setSearch("debug=true&playing=rain&vol_rain=0.20");
+    const user = userEvent.setup();
+
+    render(<Home />);
+
+    const exitButton = await screen.findByRole("button", {
+      name: "Exit Debug Mode",
+    });
+    await user.click(exitButton);
+
+    expect(window.location.search).toContain("playing=rain");
+    expect(window.location.search).toContain("vol_rain=0.20");
+    expect(window.location.search).not.toContain("debug=");
+    expect(
+      screen.queryByText("Debug timeline controls enabled"),
+    ).not.toBeInTheDocument();
   });
 });

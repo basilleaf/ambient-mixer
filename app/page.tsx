@@ -109,6 +109,37 @@ type PlayerProgress = {
 
 const clampVolume = (value: number) => Math.min(1, Math.max(0, value));
 const clampTime = (value: number, max: number) => Math.min(Math.max(value, 0), max);
+const formatCountdown = (seconds: number) => {
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(seconds, 0) : 0;
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds - minutes * 60;
+  return `${String(minutes).padStart(2, "0")}:${remainingSeconds.toFixed(1).padStart(4, "0")}`;
+};
+
+const restartPlayerFromBeginning = async (
+  player: HTMLAudioElement,
+  volume: number,
+): Promise<boolean> => {
+  player.currentTime = 0;
+  player.volume = volume;
+
+  try {
+    await player.play();
+    return true;
+  } catch {
+    // A few MP3s can fail replaying from an ended state until reloaded.
+    player.load();
+    player.currentTime = 0;
+    player.volume = volume;
+
+    try {
+      await player.play();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
 
 const readAudioStateFromUrl = () => {
   const parsedVolumes: Record<string, number> = { ...INITIAL_VOLUMES };
@@ -303,10 +334,10 @@ export default function Home() {
     runtime.crossfadeTo = toIndex;
     runtime.crossfadeStartTime = runtime.players[fromIndex].currentTime;
 
-    incoming.currentTime = 0;
-    incoming.volume = 0;
-    void incoming.play().catch(() => {
-      stopCrossfade(runtime);
+    void restartPlayerFromBeginning(incoming, 0).then((didStart) => {
+      if (!didStart) {
+        stopCrossfade(runtime);
+      }
     });
 
     runtime.crossfadeId = window.setInterval(() => {
@@ -315,19 +346,29 @@ export default function Home() {
         return;
       }
 
+      const outgoing = runtime.players[fromIndex];
+      const completeCrossfade = () => {
+        outgoing.pause();
+        outgoing.currentTime = 0;
+        runtime.activeIndex = toIndex;
+        stopCrossfade(runtime);
+        applyVolumes(trackId);
+        updateTrackProgress(trackId);
+      };
+
       applyVolumes(trackId);
       updateTrackProgress(trackId);
+
+      if (outgoing.ended) {
+        completeCrossfade();
+        return;
+      }
+
       const elapsedSeconds =
-        runtime.players[fromIndex].currentTime - runtime.crossfadeStartTime;
+        outgoing.currentTime - runtime.crossfadeStartTime;
       if (elapsedSeconds < runtime.crossfadeDurationSeconds) return;
 
-      const outgoing = runtime.players[fromIndex];
-      outgoing.pause();
-      outgoing.currentTime = 0;
-      runtime.activeIndex = toIndex;
-      stopCrossfade(runtime);
-      applyVolumes(trackId);
-      updateTrackProgress(trackId);
+      completeCrossfade();
     }, CROSSFADE_STEP_MS);
   };
 
@@ -341,20 +382,18 @@ export default function Home() {
     const incoming = runtime.players[toIndex];
     const targetVolume = volumesRef.current[trackId] ?? 0.65;
 
-    incoming.currentTime = 0;
-    incoming.volume = targetVolume;
-    void incoming.play().then(
-      () => {
+    void restartPlayerFromBeginning(incoming, targetVolume).then((didStart) => {
+      if (didStart) {
         outgoing.pause();
         outgoing.currentTime = 0;
         outgoing.volume = 0;
         runtime.activeIndex = toIndex;
-      },
-      () => {
-        runtime.playing = false;
-        setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
-      },
-    );
+        return;
+      }
+
+      runtime.playing = false;
+      setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
+    });
   };
 
   const startMonitor = (trackId: string) => {
@@ -392,23 +431,22 @@ export default function Home() {
     const targetVolume = volumesRef.current[trackId] ?? 0.65;
     const active = runtime.players[runtime.activeIndex];
     const inactive = runtime.players[runtime.activeIndex === 0 ? 1 : 0];
-    active.currentTime = 0;
-    active.volume = targetVolume;
     inactive.pause();
     inactive.currentTime = 0;
     inactive.volume = 0;
 
-    try {
-      await active.play();
+    const didStart = await restartPlayerFromBeginning(active, targetVolume);
+    if (didStart) {
       runtime.playing = true;
       startMonitor(trackId);
       updateTrackProgress(trackId);
       setIsPlaying((prev) => ({ ...prev, [trackId]: true }));
-    } catch {
-      runtime.playing = false;
-      updateTrackProgress(trackId);
-      setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
+      return;
     }
+
+    runtime.playing = false;
+    updateTrackProgress(trackId);
+    setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
   };
 
   useEffect(() => {
@@ -501,6 +539,16 @@ export default function Home() {
     volumesRef.current = { ...volumesRef.current, [trackId]: value };
     applyVolumes(trackId);
     setVolumes((prev) => ({ ...prev, [trackId]: value }));
+  };
+
+  const exitDebugMode = () => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("debug");
+    const nextSearch = url.searchParams.toString();
+    const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ""}${url.hash}`;
+    window.history.replaceState(null, "", nextUrl);
+    setIsDebugMode(false);
   };
 
   const seekTrack = async (
@@ -630,9 +678,18 @@ export default function Home() {
             Calm sound layers
           </p>
           {isDebugMode && (
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[#7d7d94]">
-              Debug timeline controls enabled
-            </p>
+            <div className="mt-3 flex flex-col items-center gap-2">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#7d7d94]">
+                Debug timeline controls enabled
+              </p>
+              <button
+                type="button"
+                onClick={exitDebugMode}
+                className="rounded-md border border-[#f55a6a] bg-transparent px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#f55a6a] transition hover:bg-[#f55a6a]/10 hover:text-[#ff8f9a]"
+              >
+                Exit Debug Mode
+              </button>
+            </div>
           )}
 
           {showPlayAllButton && (
@@ -657,6 +714,12 @@ export default function Home() {
               playerTwoTime: 0,
               duration: 1,
             };
+            const playerOneCountdown = formatCountdown(
+              progress.duration - progress.playerOneTime,
+            );
+            const playerTwoCountdown = formatCountdown(
+              progress.duration - progress.playerTwoTime,
+            );
 
             return (
               <article
@@ -683,9 +746,16 @@ export default function Home() {
                   </button>
 
                   <div className="min-w-0 flex flex-1 items-center">
-                    <p className="truncate font-mono text-sm text-[#ddddf0]">
-                      {track.label}
-                    </p>
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-sm text-[#ddddf0]">
+                        {track.label}
+                      </p>
+                      {isDebugMode && (
+                        <p className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-[#7d7d94]">
+                          {track.file}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex w-full basis-full items-center gap-2 sm:w-[170px] sm:basis-auto">
@@ -706,45 +776,57 @@ export default function Home() {
                     />
                   </div>
 
-                  {isDebugMode && (
-                    <div className="flex w-full flex-col gap-2 pt-1">
-                      <div className="flex items-center gap-2">
-                        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
-                          Player 1
-                        </span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={progress.duration}
-                          step={0.01}
-                          value={progress.playerOneTime}
-                          onChange={(event) =>
-                            void seekTrack(track.id, Number(event.target.value), 0)
-                          }
-                          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#7db6ff]"
-                          aria-label={`Player 1 position for ${track.label}`}
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
-                          Player 2
-                        </span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={progress.duration}
-                          step={0.01}
-                          value={progress.playerTwoTime}
-                          onChange={(event) =>
-                            void seekTrack(track.id, Number(event.target.value), 1)
-                          }
-                          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#f5db5a]"
-                          aria-label={`Player 2 position for ${track.label}`}
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
+                {isDebugMode && (
+                  <div className="mt-3 flex w-full flex-col gap-2 border-t border-[#1e1e30] pt-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
+                        Player 1
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={progress.duration}
+                        step={0.01}
+                        value={progress.playerOneTime}
+                        onChange={(event) =>
+                          void seekTrack(track.id, Number(event.target.value), 0)
+                        }
+                        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#7db6ff]"
+                        aria-label={`Player 1 position for ${track.label}`}
+                      />
+                      <span
+                        className="w-16 shrink-0 text-right font-mono text-[10px] uppercase tracking-[0.14em] text-[#7d7d94]"
+                        aria-label={`Player 1 countdown for ${track.label}`}
+                      >
+                        {playerOneCountdown}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
+                        Player 2
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={progress.duration}
+                        step={0.01}
+                        value={progress.playerTwoTime}
+                        onChange={(event) =>
+                          void seekTrack(track.id, Number(event.target.value), 1)
+                        }
+                        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#f5db5a]"
+                        aria-label={`Player 2 position for ${track.label}`}
+                      />
+                      <span
+                        className="w-16 shrink-0 text-right font-mono text-[10px] uppercase tracking-[0.14em] text-[#7d7d94]"
+                        aria-label={`Player 2 countdown for ${track.label}`}
+                      >
+                        {playerTwoCountdown}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </article>
             );
           })}
