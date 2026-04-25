@@ -82,56 +82,227 @@ const INITIAL_VOLUMES: Record<string, number> = Object.fromEntries(
   TRACKS.map((track) => [track.id, 0.65]),
 );
 
+const LOOP_CROSSFADE_SECONDS = 2.2;
+const MONITOR_INTERVAL_MS = 120;
+const CROSSFADE_STEP_MS = 40;
+
+type TrackAudioRuntime = {
+  players: [HTMLAudioElement, HTMLAudioElement];
+  activeIndex: 0 | 1;
+  monitorId: ReturnType<typeof window.setInterval> | null;
+  crossfadeId: ReturnType<typeof window.setInterval> | null;
+  crossfadeStartTime: number | null;
+  crossfadeDurationSeconds: number;
+  crossfadeFrom: 0 | 1 | null;
+  crossfadeTo: 0 | 1 | null;
+  playing: boolean;
+};
+
 export default function Home() {
-  const audioRefs = useRef<Record<string, HTMLAudioElement>>({});
+  const audioRefs = useRef<Record<string, TrackAudioRuntime>>({});
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
-  const [volumes, setVolumes] = useState<Record<string, number>>(INITIAL_VOLUMES);
+  const [volumes, setVolumes] =
+    useState<Record<string, number>>(INITIAL_VOLUMES);
+  const volumesRef = useRef<Record<string, number>>(INITIAL_VOLUMES);
+
+  const applyVolumes = (trackId: string) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime) return;
+
+    const targetVolume = volumesRef.current[trackId] ?? 0.65;
+    const { players } = runtime;
+
+    if (!runtime.playing) {
+      players[0].volume = targetVolume;
+      players[1].volume = 0;
+      return;
+    }
+
+    if (
+      runtime.crossfadeStartTime === null ||
+      runtime.crossfadeFrom === null ||
+      runtime.crossfadeTo === null
+    ) {
+      players[runtime.activeIndex].volume = targetVolume;
+      players[runtime.activeIndex === 0 ? 1 : 0].volume = 0;
+      return;
+    }
+
+    const elapsedSeconds =
+      players[runtime.crossfadeFrom].currentTime - runtime.crossfadeStartTime;
+    const progress = Math.min(
+      elapsedSeconds / runtime.crossfadeDurationSeconds,
+      1,
+    );
+    players[runtime.crossfadeFrom].volume = targetVolume * (1 - progress);
+    players[runtime.crossfadeTo].volume = targetVolume * progress;
+  };
+
+  const stopCrossfade = (runtime: TrackAudioRuntime) => {
+    if (runtime.crossfadeId !== null) {
+      window.clearInterval(runtime.crossfadeId);
+      runtime.crossfadeId = null;
+    }
+    runtime.crossfadeStartTime = null;
+    runtime.crossfadeFrom = null;
+    runtime.crossfadeTo = null;
+  };
+
+  const stopTrack = (trackId: string) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime) return;
+
+    if (runtime.monitorId !== null) {
+      window.clearInterval(runtime.monitorId);
+      runtime.monitorId = null;
+    }
+    stopCrossfade(runtime);
+
+    const targetVolume = volumesRef.current[trackId] ?? 0.65;
+    for (let index = 0; index < runtime.players.length; index += 1) {
+      const player = runtime.players[index];
+      player.pause();
+      player.currentTime = 0;
+      player.volume = index === 0 ? targetVolume : 0;
+    }
+
+    runtime.activeIndex = 0;
+    runtime.playing = false;
+    setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
+  };
+
+  const startCrossfade = (trackId: string) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime || !runtime.playing || runtime.crossfadeId !== null) return;
+
+    const fromIndex = runtime.activeIndex;
+    const toIndex = fromIndex === 0 ? 1 : 0;
+    const incoming = runtime.players[toIndex];
+
+    runtime.crossfadeFrom = fromIndex;
+    runtime.crossfadeTo = toIndex;
+    runtime.crossfadeStartTime = runtime.players[fromIndex].currentTime;
+
+    incoming.currentTime = 0;
+    incoming.volume = 0;
+    void incoming.play().catch(() => {
+      stopCrossfade(runtime);
+    });
+
+    runtime.crossfadeId = window.setInterval(() => {
+      if (!runtime.playing || runtime.crossfadeStartTime === null) {
+        stopCrossfade(runtime);
+        return;
+      }
+
+      applyVolumes(trackId);
+      const elapsedSeconds =
+        runtime.players[fromIndex].currentTime - runtime.crossfadeStartTime;
+      if (elapsedSeconds < runtime.crossfadeDurationSeconds) return;
+
+      const outgoing = runtime.players[fromIndex];
+      outgoing.pause();
+      outgoing.currentTime = 0;
+      runtime.activeIndex = toIndex;
+      stopCrossfade(runtime);
+      applyVolumes(trackId);
+    }, CROSSFADE_STEP_MS);
+  };
+
+  const startMonitor = (trackId: string) => {
+    const runtime = audioRefs.current[trackId];
+    if (!runtime) return;
+
+    if (runtime.monitorId !== null) {
+      window.clearInterval(runtime.monitorId);
+    }
+
+    runtime.monitorId = window.setInterval(() => {
+      if (!runtime.playing || runtime.crossfadeId !== null) return;
+
+      const active = runtime.players[runtime.activeIndex];
+      if (!Number.isFinite(active.duration) || active.duration <= 0) return;
+      const remaining = active.duration - active.currentTime;
+      if (remaining <= LOOP_CROSSFADE_SECONDS) {
+        startCrossfade(trackId);
+      }
+    }, MONITOR_INTERVAL_MS);
+  };
 
   useEffect(() => {
-    const state: Record<string, HTMLAudioElement> = {};
+    const state: Record<string, TrackAudioRuntime> = {};
 
     for (const track of TRACKS) {
-      const audio = new Audio(`/${track.file}`);
-      audio.loop = true;
-      audio.preload = "auto";
-      audio.volume = INITIAL_VOLUMES[track.id];
-      state[track.id] = audio;
+      const first = new Audio(`/${track.file}`);
+      const second = new Audio(`/${track.file}`);
+      for (const player of [first, second]) {
+        player.loop = false;
+        player.preload = "auto";
+      }
+      first.volume = INITIAL_VOLUMES[track.id];
+      second.volume = 0;
+
+      state[track.id] = {
+        players: [first, second],
+        activeIndex: 0,
+        monitorId: null,
+        crossfadeId: null,
+        crossfadeStartTime: null,
+        crossfadeDurationSeconds: LOOP_CROSSFADE_SECONDS,
+        crossfadeFrom: null,
+        crossfadeTo: null,
+        playing: false,
+      };
     }
 
     audioRefs.current = state;
 
     return () => {
-      for (const audio of Object.values(state)) {
-        audio.pause();
-        audio.currentTime = 0;
+      for (const runtime of Object.values(state)) {
+        if (runtime.monitorId !== null) {
+          window.clearInterval(runtime.monitorId);
+        }
+        stopCrossfade(runtime);
+        for (const player of runtime.players) {
+          player.pause();
+          player.currentTime = 0;
+        }
       }
     };
   }, []);
 
   const togglePlay = async (trackId: string) => {
-    const audio = audioRefs.current[trackId];
-    if (!audio) return;
+    const runtime = audioRefs.current[trackId];
+    if (!runtime) return;
 
-    if (!audio.paused) {
-      audio.pause();
-      audio.currentTime = 0;
-      setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
+    if (runtime.playing) {
+      stopTrack(trackId);
       return;
     }
 
+    const targetVolume = volumesRef.current[trackId] ?? 0.65;
+    const active = runtime.players[runtime.activeIndex];
+    const inactive = runtime.players[runtime.activeIndex === 0 ? 1 : 0];
+    active.currentTime = 0;
+    active.volume = targetVolume;
+    inactive.pause();
+    inactive.currentTime = 0;
+    inactive.volume = 0;
+
     try {
-      await audio.play();
+      await active.play();
+      runtime.playing = true;
+      startMonitor(trackId);
       setIsPlaying((prev) => ({ ...prev, [trackId]: true }));
     } catch {
+      runtime.playing = false;
       setIsPlaying((prev) => ({ ...prev, [trackId]: false }));
     }
   };
 
   const changeVolume = (trackId: string, value: number) => {
-    const audio = audioRefs.current[trackId];
-    if (!audio) return;
-
-    audio.volume = value;
+    volumesRef.current = { ...volumesRef.current, [trackId]: value };
+    applyVolumes(trackId);
     setVolumes((prev) => ({ ...prev, [trackId]: value }));
   };
 
@@ -147,7 +318,7 @@ export default function Home() {
             AMBIENT MIXER
           </h1>
           <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em] text-[#55556a]">
-            Calm sound layers, minimal controls
+            Calm sound layers
           </p>
         </header>
 
