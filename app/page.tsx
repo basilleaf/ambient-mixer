@@ -327,9 +327,10 @@ export default function Home() {
 
   useEffect(() => {
     const { volumes: urlVolumes, playingIds } = readAudioStateFromUrl();
+    const initialFilteredTracks = playingIds.size > 0 ? new Set(playingIds) : null;
     volumesRef.current = urlVolumes;
     setVolumes(urlVolumes);
-    setVisibleTrackIds(playingIds.size > 0 ? new Set(playingIds) : null);
+    setVisibleTrackIds(initialFilteredTracks);
     setSelectedInUrl(
       TRACKS.reduce<Record<string, boolean>>((acc, track) => {
         acc[track.id] = playingIds.has(track.id);
@@ -412,6 +413,11 @@ export default function Home() {
     visibleTrackIds === null
       ? TRACKS
       : TRACKS.filter((track) => visibleTrackIds.has(track.id));
+  const usedTrackIds = TRACKS.filter((track) => !!selectedInUrl[track.id]).map(
+    (track) => track.id,
+  );
+  const hasUsedTracks = usedTrackIds.length > 0;
+  const isShowingAllPlayers = visibleTrackIds === null;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080810] text-[#ddddf0]">
@@ -490,14 +496,20 @@ export default function Home() {
           })}
         </div>
 
-        {visibleTrackIds !== null && (
+        {(hasUsedTracks || !isShowingAllPlayers) && (
           <div className="pt-1 text-center">
             <button
               type="button"
-              onClick={() => setVisibleTrackIds(null)}
+              onClick={() => {
+                if (isShowingAllPlayers) {
+                  setVisibleTrackIds(new Set(usedTrackIds));
+                  return;
+                }
+                setVisibleTrackIds(null);
+              }}
               className="font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
             >
-              Show all players
+              {isShowingAllPlayers ? "Hide unused players" : "Show all players"}
             </button>
           </div>
         )}
