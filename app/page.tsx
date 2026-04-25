@@ -172,6 +172,7 @@ export default function Home() {
   const audioRefs = useRef<Record<string, TrackAudioRuntime>>({});
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
   const [selectedInUrl, setSelectedInUrl] = useState<Record<string, boolean>>({});
+  const [visibleTrackIds, setVisibleTrackIds] = useState<Set<string> | null>(null);
   const [volumes, setVolumes] =
     useState<Record<string, number>>(INITIAL_VOLUMES);
   const volumesRef = useRef<Record<string, number>>(INITIAL_VOLUMES);
@@ -328,6 +329,7 @@ export default function Home() {
     const { volumes: urlVolumes, playingIds } = readAudioStateFromUrl();
     volumesRef.current = urlVolumes;
     setVolumes(urlVolumes);
+    setVisibleTrackIds(playingIds.size > 0 ? new Set(playingIds) : null);
     setSelectedInUrl(
       TRACKS.reduce<Record<string, boolean>>((acc, track) => {
         acc[track.id] = playingIds.has(track.id);
@@ -406,6 +408,11 @@ export default function Home() {
     setVolumes((prev) => ({ ...prev, [trackId]: value }));
   };
 
+  const visibleTracks =
+    visibleTrackIds === null
+      ? TRACKS
+      : TRACKS.filter((track) => visibleTrackIds.has(track.id));
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080810] text-[#ddddf0]">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[length:34px_34px]" />
@@ -423,7 +430,7 @@ export default function Home() {
         </header>
 
         <div className="flex flex-col gap-3">
-          {TRACKS.map((track) => {
+          {visibleTracks.map((track) => {
             const playing = !!isPlaying[track.id];
             const volume = volumes[track.id] ?? 0.65;
 
@@ -482,6 +489,18 @@ export default function Home() {
             );
           })}
         </div>
+
+        {visibleTrackIds !== null && (
+          <div className="pt-1 text-center">
+            <button
+              type="button"
+              onClick={() => setVisibleTrackIds(null)}
+              className="font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
+            >
+              Show all players
+            </button>
+          </div>
+        )}
       </section>
     </main>
   );
