@@ -116,7 +116,23 @@ describe("Home page audio state logic", () => {
     await user.click(clearAllButton);
 
     expect(screen.queryByRole("button", { name: "Clear all" })).not.toBeInTheDocument();
-    expect(window.location.search).toBe("");
+    expect(window.location.search).toBe("?theme=day");
+  });
+
+  it("hydrates Night Shift theme from URL and keeps toggle in sync", async () => {
+    setSearch("theme=night");
+    const user = userEvent.setup();
+
+    render(<Home />);
+
+    const themeToggle = await screen.findByRole("button", {
+      name: "Theme toggle",
+    });
+    expect(themeToggle).toHaveTextContent("Night Shift");
+
+    await user.click(themeToggle);
+    expect(themeToggle).toHaveTextContent("Day Light");
+    expect(window.location.search).toContain("theme=day");
   });
 
   it("shows play all only when filtered tracks are not all playing", async () => {

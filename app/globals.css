@@ -61,15 +61,6 @@ body {
 
 .ambient-title-home__text {
   display: inline-block;
-  background-image: linear-gradient(
-    90deg,
-    #c8f55a 0%,
-    #5af5c8 22%,
-    #e8fff2 42%,
-    #5af5c8 50%,
-    #5a9bf5 72%,
-    #c8f55a 100%
-  );
   background-size: 220% 100%;
   background-position: 100% 50%;
   -webkit-background-clip: text;
@@ -87,7 +78,6 @@ body {
 
   .ambient-title-home__text {
     animation: none;
-    background-image: linear-gradient(90deg, #c8f55a, #5af5c8, #5a9bf5);
     background-size: 100% 100%;
     background-position: 0% 50%;
   }

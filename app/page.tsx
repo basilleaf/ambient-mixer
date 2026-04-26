@@ -88,6 +88,106 @@ const MONITOR_INTERVAL_MS = 120;
 const CROSSFADE_STEP_MS = 40;
 const URL_VOLUME_PREFIX = "vol_";
 const URL_PLAYING_KEY = "playing";
+const URL_THEME_KEY = "theme";
+type ThemeMode = "day" | "night";
+
+const NIGHT_TRACK_COLORS = [
+  "#ff6b47",
+  "#ff4d4d",
+  "#ff8a3d",
+  "#ff5a36",
+  "#ff9f43",
+  "#ff6f61",
+  "#ff7a2f",
+  "#f25c54",
+  "#ff8f5c",
+  "#ff7043",
+  "#ffb84d",
+];
+
+const THEME_PALETTE: Record<
+  ThemeMode,
+  {
+    pageBg: string;
+    pageText: string;
+    gridLine: string;
+    orbLeft: string;
+    orbRight: string;
+    navLink: string;
+    subtitle: string;
+    debugText: string;
+    debugButton: string;
+    playAll: string;
+    cardBorder: string;
+    cardBg: string;
+    sliderRail: string;
+    secondaryText: string;
+    trackTitle: string;
+    timelineOne: string;
+    timelineTwo: string;
+    clearLink: string;
+  }
+> = {
+  day: {
+    pageBg: "#080810",
+    pageText: "#ddddf0",
+    gridLine: "rgba(255,255,255,0.02)",
+    orbLeft: "rgba(200,245,90,0.10)",
+    orbRight: "rgba(90,245,200,0.10)",
+    navLink: "#7db6ff",
+    subtitle: "#55556a",
+    debugText: "#7d7d94",
+    debugButton: "#f55a6a",
+    playAll: "#c8f55a",
+    cardBorder: "#1e1e30",
+    cardBg: "rgba(20,20,31,0.95)",
+    sliderRail: "#1e1e30",
+    secondaryText: "#55556a",
+    trackTitle: "#ddddf0",
+    timelineOne: "#7db6ff",
+    timelineTwo: "#f5db5a",
+    clearLink: "#f5db5a",
+  },
+  night: {
+    pageBg: "#040202",
+    pageText: "#ffc2a1",
+    gridLine: "rgba(255,140,90,0.08)",
+    orbLeft: "rgba(255,73,35,0.24)",
+    orbRight: "rgba(255,112,45,0.2)",
+    navLink: "#ff7a3c",
+    subtitle: "#ff7a45",
+    debugText: "#ff9b72",
+    debugButton: "#ff4e3a",
+    playAll: "#ff702e",
+    cardBorder: "#34120c",
+    cardBg: "rgba(16,5,4,0.97)",
+    sliderRail: "#4a1f18",
+    secondaryText: "#ff966c",
+    trackTitle: "#ff7a3c",
+    timelineOne: "#ff6a33",
+    timelineTwo: "#ff9a3d",
+    clearLink: "#ff9a3d",
+  },
+};
+
+const TITLE_GRADIENT_BY_THEME: Record<ThemeMode, string> = {
+  day: "linear-gradient(90deg, #c8f55a 0%, #5af5c8 22%, #e8fff2 42%, #5af5c8 50%, #5a9bf5 72%, #c8f55a 100%)",
+  night:
+    "linear-gradient(90deg, #ff240f 0%, #ff4a1f 22%, #ff6a1f 42%, #ff4a1f 52%, #ff2f12 74%, #ff3a16 100%)",
+};
+
+function HomeTitle({ themeMode }: { themeMode: ThemeMode }) {
+  return (
+    <h1 className="ambient-title-home font-mono text-5xl font-bold tracking-tight">
+      <span
+        className="ambient-title-home__text"
+        style={{ backgroundImage: TITLE_GRADIENT_BY_THEME[themeMode] }}
+      >
+        AMBIENT MIXER
+      </span>
+    </h1>
+  );
+}
 
 type TrackAudioRuntime = {
   players: [HTMLAudioElement, HTMLAudioElement];
@@ -141,6 +241,12 @@ const restartPlayerFromBeginning = async (
   }
 };
 
+const readThemeFromUrl = (): ThemeMode => {
+  if (typeof window === "undefined") return "day";
+  const params = new URLSearchParams(window.location.search);
+  return params.get(URL_THEME_KEY) === "night" ? "night" : "day";
+};
+
 const readAudioStateFromUrl = () => {
   const parsedVolumes: Record<string, number> = { ...INITIAL_VOLUMES };
   const playingIds = new Set<string>();
@@ -176,6 +282,7 @@ const readAudioStateFromUrl = () => {
 const writeAudioStateToUrl = (
   volumes: Record<string, number>,
   selectedInUrl: Record<string, boolean>,
+  themeMode: ThemeMode,
 ) => {
   if (typeof window === "undefined") return;
 
@@ -188,9 +295,11 @@ const writeAudioStateToUrl = (
 
   // Always clear our own params first to avoid stale audio state in the URL.
   params.delete(URL_PLAYING_KEY);
+  params.delete(URL_THEME_KEY);
   for (const track of TRACKS) {
     params.delete(`${URL_VOLUME_PREFIX}${track.id}`);
   }
+  params.set(URL_THEME_KEY, themeMode);
 
   if (playingTrackIds.length > 0) {
     params.set(URL_PLAYING_KEY, playingTrackIds.join(","));
@@ -217,6 +326,8 @@ export default function Home() {
     {},
   );
   const [isHydratedFromUrl, setIsHydratedFromUrl] = useState(false);
+  const [isThemeReady, setIsThemeReady] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>("day");
   const [visibleTrackIds, setVisibleTrackIds] = useState<Set<string> | null>(
     null,
   );
@@ -231,6 +342,7 @@ export default function Home() {
     }, {}),
   );
   const volumesRef = useRef<Record<string, number>>(INITIAL_VOLUMES);
+  const palette = THEME_PALETTE[themeMode];
 
   const applyVolumes = (trackId: string) => {
     const runtime = audioRefs.current[trackId];
@@ -452,6 +564,8 @@ export default function Home() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setIsDebugMode(params.get("debug") === "true");
+    setThemeMode(readThemeFromUrl());
+    setIsThemeReady(true);
     const { volumes: urlVolumes, playingIds } = readAudioStateFromUrl();
     const initialFilteredTracks =
       playingIds.size > 0 ? new Set(playingIds) : null;
@@ -518,8 +632,18 @@ export default function Home() {
 
   useEffect(() => {
     if (!isHydratedFromUrl) return;
-    writeAudioStateToUrl(volumes, selectedInUrl);
-  }, [isHydratedFromUrl, volumes, selectedInUrl]);
+    writeAudioStateToUrl(volumes, selectedInUrl, themeMode);
+  }, [isHydratedFromUrl, themeMode, volumes, selectedInUrl]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setThemeMode(readThemeFromUrl());
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
 
   const togglePlay = async (trackId: string) => {
     const runtime = audioRefs.current[trackId];
@@ -658,34 +782,75 @@ export default function Home() {
   const showClearAllButton = hasUsedTracks || !isDefaultVolumeState;
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#080810] text-[#ddddf0]">
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-size-[34px_34px]" />
-      <div className="pointer-events-none absolute -left-28 top-[-160px] h-[520px] w-[520px] rounded-full bg-[#c8f55a]/10 blur-[110px]" />
-      <div className="pointer-events-none absolute -right-28 bottom-[-160px] h-[520px] w-[520px] rounded-full bg-[#5af5c8]/10 blur-[110px]" />
+    <main
+      className="relative min-h-screen overflow-hidden"
+      style={{
+        backgroundColor: palette.pageBg,
+        color: palette.pageText,
+        visibility: isThemeReady ? "visible" : "hidden",
+      }}
+    >
+      <div
+        className="pointer-events-none absolute inset-0 bg-size-[34px_34px]"
+        style={{
+          backgroundImage: `linear-gradient(${palette.gridLine} 1px, transparent 1px),linear-gradient(90deg,${palette.gridLine} 1px,transparent 1px)`,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute -left-28 top-[-160px] h-[520px] w-[520px] rounded-full blur-[110px]"
+        style={{ backgroundColor: palette.orbLeft }}
+      />
+      <div
+        className="pointer-events-none absolute -right-28 bottom-[-160px] h-[520px] w-[520px] rounded-full blur-[110px]"
+        style={{ backgroundColor: palette.orbRight }}
+      />
 
       <section className="relative mx-auto flex w-full max-w-3xl flex-col gap-8 px-5 py-14 sm:px-8">
         <header className="relative text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setThemeMode((prev) => (prev === "day" ? "night" : "day"));
+            }}
+            className="fixed left-[25px] top-[15px] z-20 rounded-md border bg-transparent px-3 py-1.5 font-mono text-xs uppercase tracking-[0.14em] transition hover:opacity-85"
+            style={{
+              borderColor: palette.navLink,
+              color: palette.navLink,
+            }}
+            aria-label="Theme toggle"
+          >
+            {themeMode === "night" ? "Night Shift" : "Day Light"}
+          </button>
           <Link
             href="/about"
-            className="fixed right-[25px] top-[15px] z-20 font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] transition hover:text-[#a9ceff]"
+            className="fixed right-[25px] top-[15px] z-20 font-mono text-xs uppercase tracking-[0.14em] transition hover:opacity-85"
+            style={{ color: palette.navLink }}
           >
             About
           </Link>
-          <h1 className="ambient-title-home font-mono text-5xl font-bold tracking-tight">
-            <span className="ambient-title-home__text">AMBIENT MIXER</span>
-          </h1>
-          <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em] text-[#55556a]">
+          <HomeTitle themeMode={themeMode} />
+          <p
+            className="mt-3 font-mono text-[11px] uppercase tracking-[0.28em]"
+            style={{ color: palette.subtitle }}
+          >
             Calm sound layers
           </p>
           {isDebugMode && (
             <div className="mt-3 flex flex-col items-center gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#7d7d94]">
+              <p
+                className="font-mono text-[10px] uppercase tracking-[0.2em]"
+                style={{ color: palette.debugText }}
+              >
                 Debug timeline controls enabled
               </p>
               <button
                 type="button"
                 onClick={exitDebugMode}
-                className="rounded-md border border-[#f55a6a] bg-transparent px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#f55a6a] transition hover:bg-[#f55a6a]/10 hover:text-[#ff8f9a]"
+                className="rounded-md border bg-transparent px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition hover:opacity-85"
+                style={{
+                  borderColor: palette.debugButton,
+                  color: palette.debugButton,
+                }}
               >
                 Exit Debug Mode
               </button>
@@ -697,7 +862,11 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => void playVisibleTracks()}
-                className="rounded-md border border-[#c8f55a] bg-transparent px-5 py-2 font-mono text-xs uppercase tracking-[0.16em] text-[#c8f55a] shadow-[0_0_0_1px_rgba(200,245,90,0.15)] transition hover:bg-[#c8f55a]/12 hover:text-[#efffb4]"
+                className="rounded-md border bg-transparent px-5 py-2 font-mono text-xs uppercase tracking-[0.16em] transition hover:opacity-85"
+                style={{
+                  borderColor: palette.playAll,
+                  color: palette.playAll,
+                }}
               >
                 Play all
               </button>
@@ -707,6 +876,10 @@ export default function Home() {
 
         <div className="flex flex-col gap-3">
           {visibleTracks.map((track) => {
+            const trackColor =
+              themeMode === "night"
+                ? NIGHT_TRACK_COLORS[TRACKS.findIndex((item) => item.id === track.id) % NIGHT_TRACK_COLORS.length]
+                : track.color;
             const playing = !!isPlaying[track.id];
             const volume = volumes[track.id] ?? 0.65;
             const progress = playerProgress[track.id] ?? {
@@ -724,11 +897,12 @@ export default function Home() {
             return (
               <article
                 key={track.id}
-                className="rounded-xl border border-[#1e1e30] bg-[#14141f]/95 px-4 py-4 backdrop-blur-sm transition-colors"
+                className="rounded-xl border px-4 py-4 backdrop-blur-sm transition-colors"
                 style={{
+                  backgroundColor: palette.cardBg,
                   borderColor: playing
-                    ? `color-mix(in srgb, ${track.color} 45%, #1e1e30)`
-                    : "#1e1e30",
+                    ? `color-mix(in srgb, ${trackColor} 45%, ${palette.cardBorder})`
+                    : palette.cardBorder,
                 }}
               >
                 <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap sm:gap-4">
@@ -737,9 +911,9 @@ export default function Home() {
                     onClick={() => void togglePlay(track.id)}
                     className="min-w-[88px] shrink-0 rounded-md border px-3 py-2 font-mono text-xs uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-50"
                     style={{
-                      borderColor: track.color,
-                      color: playing ? "#080810" : track.color,
-                      backgroundColor: playing ? track.color : "transparent",
+                      borderColor: trackColor,
+                      color: playing ? palette.pageBg : trackColor,
+                      backgroundColor: playing ? trackColor : "transparent",
                     }}
                   >
                     {playing ? "Stop" : "Play"}
@@ -747,11 +921,14 @@ export default function Home() {
 
                   <div className="min-w-0 flex flex-1 items-center">
                     <div className="min-w-0">
-                      <p className="truncate font-mono text-sm text-[#ddddf0]">
+                      <p className="truncate font-mono text-sm" style={{ color: palette.trackTitle }}>
                         {track.label}
                       </p>
                       {isDebugMode && (
-                        <p className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-[#7d7d94]">
+                        <p
+                          className="truncate font-mono text-[10px] uppercase tracking-[0.14em]"
+                          style={{ color: palette.debugText }}
+                        >
                           {track.file}
                         </p>
                       )}
@@ -759,7 +936,10 @@ export default function Home() {
                   </div>
 
                   <div className="flex w-full basis-full items-center gap-2 sm:w-[170px] sm:basis-auto">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
+                    <span
+                      className="font-mono text-[10px] uppercase tracking-[0.14em]"
+                      style={{ color: palette.secondaryText }}
+                    >
                       Vol
                     </span>
                     <input
@@ -771,16 +951,26 @@ export default function Home() {
                       onChange={(event) =>
                         changeVolume(track.id, Number(event.target.value))
                       }
-                      className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#c8f55a] disabled:cursor-not-allowed"
+                      className="h-1 w-full cursor-pointer appearance-none rounded-full disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: palette.sliderRail,
+                        accentColor: trackColor,
+                      }}
                       aria-label={`Volume for ${track.label}`}
                     />
                   </div>
 
                 </div>
                 {isDebugMode && (
-                  <div className="mt-3 flex w-full flex-col gap-2 border-t border-[#1e1e30] pt-3">
+                  <div
+                    className="mt-3 flex w-full flex-col gap-2 border-t pt-3"
+                    style={{ borderColor: palette.cardBorder }}
+                  >
                     <div className="flex items-center gap-2">
-                      <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
+                      <span
+                        className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em]"
+                        style={{ color: palette.secondaryText }}
+                      >
                         Player 1
                       </span>
                       <input
@@ -792,18 +982,26 @@ export default function Home() {
                         onChange={(event) =>
                           void seekTrack(track.id, Number(event.target.value), 0)
                         }
-                        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#7db6ff]"
+                        className="h-1 w-full cursor-pointer appearance-none rounded-full"
+                        style={{
+                          backgroundColor: palette.sliderRail,
+                          accentColor: palette.timelineOne,
+                        }}
                         aria-label={`Player 1 position for ${track.label}`}
                       />
                       <span
-                        className="w-16 shrink-0 text-right font-mono text-[10px] uppercase tracking-[0.14em] text-[#7d7d94]"
+                        className="w-16 shrink-0 text-right font-mono text-[10px] uppercase tracking-[0.14em]"
+                        style={{ color: palette.debugText }}
                         aria-label={`Player 1 countdown for ${track.label}`}
                       >
                         {playerOneCountdown}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-[#55556a]">
+                      <span
+                        className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em]"
+                        style={{ color: palette.secondaryText }}
+                      >
                         Player 2
                       </span>
                       <input
@@ -815,11 +1013,16 @@ export default function Home() {
                         onChange={(event) =>
                           void seekTrack(track.id, Number(event.target.value), 1)
                         }
-                        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#1e1e30] accent-[#f5db5a]"
+                        className="h-1 w-full cursor-pointer appearance-none rounded-full"
+                        style={{
+                          backgroundColor: palette.sliderRail,
+                          accentColor: palette.timelineTwo,
+                        }}
                         aria-label={`Player 2 position for ${track.label}`}
                       />
                       <span
-                        className="w-16 shrink-0 text-right font-mono text-[10px] uppercase tracking-[0.14em] text-[#7d7d94]"
+                        className="w-16 shrink-0 text-right font-mono text-[10px] uppercase tracking-[0.14em]"
+                        style={{ color: palette.debugText }}
                         aria-label={`Player 2 countdown for ${track.label}`}
                       >
                         {playerTwoCountdown}
@@ -845,6 +1048,10 @@ export default function Home() {
                   setVisibleTrackIds(null);
                 }}
                 className="font-mono text-xs uppercase tracking-[0.14em] text-[#7db6ff] underline decoration-[#7db6ff]/60 underline-offset-4 transition hover:text-[#a9ceff]"
+                style={{
+                  color: palette.navLink,
+                  textDecorationColor: `${palette.navLink}99`,
+                }}
               >
                 {isShowingAllPlayers
                   ? "Hide unused players"
@@ -855,7 +1062,11 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="font-mono text-xs uppercase tracking-[0.14em] text-[#f5db5a] underline decoration-[#f5db5a]/60 underline-offset-4 transition hover:text-[#ffe992]"
+                  className="font-mono text-xs uppercase tracking-[0.14em] underline underline-offset-4 transition hover:opacity-85"
+                  style={{
+                    color: palette.clearLink,
+                    textDecorationColor: `${palette.clearLink}99`,
+                  }}
                 >
                   Clear all
                 </button>
