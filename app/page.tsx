@@ -935,7 +935,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="flex w-full basis-full items-center gap-2 sm:w-[170px] sm:basis-auto">
+                  <div className="flex w-full basis-full items-center gap-2 sm:w-[340px] sm:basis-auto">
                     <span
                       className="font-mono text-[10px] uppercase tracking-[0.14em]"
                       style={{ color: palette.secondaryText }}
