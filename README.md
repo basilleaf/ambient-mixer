@@ -1,3 +1,18 @@
+## Calm sound layers - vibe coded ambient audio mixer
+
+- Browser-based ambient sound mixer. Stack rain, ocean, crickets, ambient music layers, and more as independent layers with per-track volume
+- Seamless looping without harsh cuts, dual HTMLAudio players per track with timed crossfades before each loop boundary
+- Shareable/bookmarkable mixes via query string: which tracks are playing and each volume level sync to the URL
+- Hydration from the URL on load so shared links resume the same soundscape; optional “Play all” for the visible subset
+- Night theme toggle for dark UI styling tuned for evening use and long sessions
+- Built-in debug mode to surface app state and playback diagnostics (add debug=true to URL)
+- Built with Next.js App Router, React 19, TypeScript, Tailwind CSS
+- Unit tests for button visibilty logic and URL-state behavior with Jest + React Testing Library
+
+deployed at https://ambient-mixer-xi.vercel.app
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
