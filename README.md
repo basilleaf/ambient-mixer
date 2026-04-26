@@ -11,6 +11,11 @@
 
 deployed at https://ambient-mixer-xi.vercel.app
 
+<img width="3410" height="2104" alt="image" src="https://github.com/user-attachments/assets/338df161-907a-4e2a-a343-485c834157d9" />
+
+<img width="3420" height="2130" alt="image" src="https://github.com/user-attachments/assets/eb7cb44e-fc8f-46e8-944e-892933ea4b67" />
+
+
 ---
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
