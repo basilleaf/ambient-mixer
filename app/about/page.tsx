@@ -68,7 +68,7 @@ export default function AboutPage() {
 
         <article className="rounded-xl border border-[#1e1e30] bg-[#14141f]/95 px-5 py-5 backdrop-blur-sm">
           <p className="font-mono text-sm leading-6 text-[#c3c3d6]">
-            All audiosourced from{" "}
+            All audio sourced from{" "}
             <a
               href="https://pixabay.com/"
               target="_blank"
